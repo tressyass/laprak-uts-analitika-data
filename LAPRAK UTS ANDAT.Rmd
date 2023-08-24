@@ -1,0 +1,105 @@
+---
+title: "Laprak UTS Andat"
+author: "Tressya"
+date: "10/8/2022"
+output: pdf_document
+---
+
+```{r}
+library(readxl)
+uts<-read_excel("swmotorcycle.xlsx",2)
+uts
+datauts<-read_excel("swmotorcycle.xlsx",1)
+datauts
+```
+
+
+```{r}
+library(tidyverse)
+uts1<-uts%>%
+mutate(Area=ifelse(Area==1,"central_parts",ifelse(Area==2,"lesser_towns", ifelse(Area==3,"small_towns",ifelse(Area==4,"suburbs",ifelse(Area==5,"northern_countryside",ifelse(Area==6,"northern_town","gotland")))))))
+uts1
+```
+```{r}
+uts2<-uts1%>%
+mutate(RiskClass=ifelse(RiskClass=="EV_Ratio_lessthan_5","c1",ifelse(RiskClass=="EV_Ratio_6_8","c2", ifelse(RiskClass=="EV_Ratio_9_12","c3",ifelse(RiskClass=="EV_Ratio_13_15","c4",ifelse(RiskClass=="EV_Ratio_16_19","c5",ifelse(RiskClass=="EV_Ratio_20_24","c6","c7")))))))
+uts2
+```
+
+```{r}
+library(tidyverse)
+uts3<-uts2%>%
+mutate(BonusClass=ifelse(BonusClass==1,"ca",ifelse(BonusClass==2,"cb", ifelse(BonusClass==3,"cc",ifelse(BonusClass==4,"cd",ifelse(BonusClass==5,"ce",ifelse(BonusClass==6,"cf","cg")))))))
+uts3
+```
+```{r}
+#model.pois<-glm(ClaimNb~as.factor(Gender)+as.factor(Area)+as.factor(RiskClass)+as.factor(BonusClass)+VehAge+OwnerAge,data=uts3,family=poisson)
+#summary(model.pois,dispersion=dp)
+```
+
+
+```{r}
+#Regresi Poisson
+#menghitung parameter dispersion secara manual 
+disp = sum(residuals(model.pois,type="pearson")^2)/model.pois$df.residual
+disp
+model.pois<-glm(ClaimNb~as.factor(Gender)+as.factor(Area)+as.factor(RiskClass)+as.factor(BonusClass)+VehAge+OwnerAge,data=datauts,family=poisson)
+summary(model.pois,dispersion=disp)
+```
+
+```{r}
+library(pscl)
+library(MASS)
+```
+
+```{r}
+model.nb <- glm.nb(ClaimNb~as.factor(Gender)+as.factor(Area)+as.factor(RiskClass)+as.factor(BonusClass)+VehAge+OwnerAge,data=datauts)
+summary(model.nb)
+```
+```{r}
+exp(model.nb$coefficients[1])/(1+exp(model.nb$coefficients[1]))
+cbind(model.nb$coefficients,exp(model.nb$coefficients))
+```
+
+```{r}
+library(AER)
+model_zinb <- zeroinfl(ClaimNb~as.factor(Gender)+as.factor(Area)+as.factor(RiskClass)+as.factor(BonusClass)+VehAge+OwnerAge, data=datauts, dist = "negbin")
+summary(model_zinb)
+```
+
+
+```{r}
+model_zip <- zeroinfl(ClaimNb~as.factor(Gender)+as.factor(Area)+as.factor(RiskClass)+as.factor(BonusClass)+VehAge+OwnerAge, data=datauts, dist = "poisson")
+summary(model_zip)
+```
+
+```{r}
+#Koefisien 
+perbandingan_model<-list("Poisson" = model.pois,"NB" = model.nb, "ZINB" = model_zinb, "ZIP"=model_zip)
+sapply(perbandingan_model, function(x) coef(x)[1:22])
+```
+
+```{r}
+#Standard Error
+library(AER)
+cbind("Poisson" = sqrt(diag(vcov(model.pois))),"Adj-Pois" = sqrt(diag(sandwich(model.pois))),sapply(perbandingan_model[-1], function(x) sqrt(diag(vcov(x)))[1:22]))
+```
+```{r}
+rbind(logLik = sapply(perbandingan_model, function(x) round(logLik(x), digits = 4)),Df = sapply(perbandingan_model, function(x) attr(logLik(x), "df")))
+```
+
+
+```{r}
+round(c("Obs" = sum(uts3$ClaimNb< 1),
+        "Poisson" = sum(dpois(0, fitted(model.pois))),
+        "NegBin" = sum(dnbinom(0, mu = fitted(model.nb), size = model.nb$theta)),
+        "ZINB" = sum(predict(model_zinb, type = "prob")[,1]),
+        "ZIP"=sum(predict(model_zip, type = "prob")[,1])
+))
+```
+
+```{r}
+rbind(AIC = sapply(perbandingan_model, function(x) round(AIC(x), digits = 4)))
+rbind(BIC = sapply(perbandingan_model, function(x) round(BIC(x), digits = 4)))
+```
+
